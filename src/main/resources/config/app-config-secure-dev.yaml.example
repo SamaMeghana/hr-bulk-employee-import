@@ -1,0 +1,8 @@
+# Copy this file to app-config-secure-dev.yaml and replace both values.
+# Values must be encrypted with the Mule Secure Configuration Properties Tool.
+# Do not commit the copied file or the encryption key.
+
+db:
+  password: "![REPLACE_WITH_ENCRYPTED_DB_PASSWORD]"
+smtp:
+  password: "![REPLACE_WITH_ENCRYPTED_SMTP_PASSWORD]"

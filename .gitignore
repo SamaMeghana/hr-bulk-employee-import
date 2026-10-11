@@ -2,4 +2,10 @@ target/
 .mule/
 .studio/
 *.jar
+.DS_Store
+.idea/
+.vscode/
 src/main/resources/config/*-secure-*.yaml
+.env
+.env.*
+!.env.example

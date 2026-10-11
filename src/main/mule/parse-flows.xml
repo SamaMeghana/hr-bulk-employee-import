@@ -5,7 +5,6 @@
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:schemaLocation="
       http://www.mulesoft.org/schema/mule/documentation http://www.mulesoft.org/schema/mule/documentation/current/mule-documentation.xsd
-      
       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
       http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
@@ -14,32 +13,26 @@
             <ee:message><ee:set-payload><![CDATA[%dw 2.0
 output application/java
 var expected = ["employeeId","firstName","lastName","dateOfBirth","dateOfJoining","officialEmail","mobile","departmentCode","designation","locationCode","employmentType","managerId"]
-var text   = payload as String {encoding: "UTF-8"}
-var lines  = (text splitBy /
-?
-/) filter (!isEmpty(trim($)))
-var data   = lines filter (!($ startsWith "#"))
-var header = ((data[0] default "") replace "﻿" with "") splitBy "," map trim($)
-var decl   = (lines filter ($ startsWith "#recordCount="))[0]
+var text = payload as String {encoding: "UTF-8"}
+var lines = text splitBy /\r?\n/ filter ((line) -> !isEmpty(trim(line)))
+var data = lines filter ((line) -> !(line startsWith "#"))
+var header = (((data[0] default "") replace "\uFEFF" with "") splitBy ",") map trim($)
+var declaration = (lines filter ($ startsWith "#recordCount="))[0] default null
 ---
 {
   error: if (text contains "�") "File encoding is not valid UTF-8"
          else if (isEmpty(data)) "File has no header row"
          else if (header != expected) "CSV header is missing, reordered or has unexpected columns: expected " ++ (expected joinBy ",")
          else null,
-  declared: if (decl == null) null else ((decl splitBy "=")[1] as Number)
+  declared: if (declaration == null) null else ((declaration splitBy "=")[1] as Number)
 }]]></ee:set-payload></ee:message>
             <ee:variables><ee:set-variable variableName="fileCheck">#[payload]</ee:set-variable></ee:variables>
         </ee:transform>
         <choice>
-            <when expression="#[vars.fileCheck.error != null]">
-                <raise-error type="HR:INVALID_FILE" description="#[vars.fileCheck.error]" />
-            </when>
+            <when expression="#[vars.fileCheck.error != null]"><raise-error type="HR:INVALID_FILE" description="#[vars.fileCheck.error]" /></when>
         </choice>
         <set-payload value="#[vars.rawFile]" />
-        <ee:transform doc:name="CSV to canonical">
-            <ee:message><ee:set-payload resource="dwl/csv-canonical-transform.dwl" /></ee:message>
-        </ee:transform>
+        <ee:transform doc:name="CSV to canonical"><ee:message><ee:set-payload resource="dwl/csv-canonical-transform.dwl" /></ee:message></ee:transform>
         <set-variable variableName="records" value="#[payload]" />
         <set-variable variableName="declaredCount" value="#[vars.fileCheck.declared]" />
         <set-variable variableName="sourceSystem" value="#['n/a']" />
@@ -59,24 +52,16 @@ var missing = emps map ((e, i) -> { row: i + 1, gone: expected -- (keysOf(e) map
 {
   error: if (root == null) "Root element employeeImport is missing"
          else if (root.employees == null) "Element employees is missing"
-         else if (!isEmpty(missing)) "Employee element(s) missing required elements, first at row " ++ missing[0].row ++ ": " ++ (missing[0].gone joinBy ",")
+         else if (!isEmpty(missing)) "Employee element(s) missing required elements, first at row " ++ (missing[0].row as String) ++ ": " ++ (missing[0].gone joinBy ",")
          else null,
   declared: root.header.recordCount as Number default null,
   sourceSystem: root.header.sourceSystem as String default "n/a"
 }]]></ee:set-payload></ee:message>
                 <ee:variables><ee:set-variable variableName="fileCheck">#[payload]</ee:set-variable></ee:variables>
             </ee:transform>
-            <error-handler>
-                <on-error-propagate type="MULE:EXPRESSION">
-                    <raise-error type="HR:INVALID_FILE" description="XML cannot be parsed" />
-                </on-error-propagate>
-            </error-handler>
+            <error-handler><on-error-propagate type="MULE:EXPRESSION"><raise-error type="HR:INVALID_FILE" description="XML cannot be parsed" /></on-error-propagate></error-handler>
         </try>
-        <choice>
-            <when expression="#[vars.fileCheck.error != null]">
-                <raise-error type="HR:INVALID_FILE" description="#[vars.fileCheck.error]" />
-            </when>
-        </choice>
+        <choice><when expression="#[vars.fileCheck.error != null]"><raise-error type="HR:INVALID_FILE" description="#[vars.fileCheck.error]" /></when></choice>
         <set-payload value="#[vars.rawFile]" />
         <ee:transform doc:name="XML to canonical"><ee:message><ee:set-payload resource="dwl/xml-canonical-transform.dwl" /></ee:message></ee:transform>
         <set-variable variableName="records" value="#[payload]" />
@@ -86,10 +71,6 @@ var missing = emps map ((e, i) -> { row: i + 1, gone: expected -- (keysOf(e) map
     </sub-flow>
 
     <sub-flow name="hr-import-count-check-subflow">
-        <choice>
-            <when expression="#[vars.declaredCount != null and vars.declaredCount != sizeOf(vars.records)]">
-                <raise-error type="HR:COUNT_MISMATCH" description="#['Declared ' ++ vars.declaredCount ++ ' records but parsed ' ++ sizeOf(vars.records)]" />
-            </when>
-        </choice>
+        <choice><when expression="#[vars.declaredCount != null and vars.declaredCount != sizeOf(vars.records)]"><raise-error type="HR:COUNT_MISMATCH" description="#['Declared ' ++ vars.declaredCount ++ ' records but parsed ' ++ sizeOf(vars.records)]" /></when></choice>
     </sub-flow>
 </mule>
