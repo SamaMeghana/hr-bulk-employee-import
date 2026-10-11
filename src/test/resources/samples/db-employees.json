@@ -1,0 +1,6 @@
+[
+  { "employee_id": "EMP10002", "official_email": "seed.manager@company.com" },
+  { "employee_id": "EMP10003", "official_email": "m3@company.com" },
+  { "employee_id": "EMP10005", "official_email": "m5@company.com" },
+  { "employee_id": "EMP10008", "official_email": "m8@company.com" }
+]

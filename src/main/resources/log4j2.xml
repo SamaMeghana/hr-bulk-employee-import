@@ -1,0 +1,13 @@
+<Configuration>
+  <Appenders>
+    <Console name="Console"><PatternLayout pattern="%d{ISO8601} %-5p [%t] %c - %m%n" /></Console>
+  </Appenders>
+  <Loggers>
+    <AsyncLogger name="hr.import" level="INFO" />
+    <AsyncLogger name="hr.import.alert" level="ERROR" />
+    <AsyncLogger name="org.mule.extension.db" level="WARN" />
+    <AsyncLogger name="com.mysql" level="WARN" />
+    <AsyncLogger name="org.mule.runtime.core" level="WARN" />
+    <AsyncRoot level="INFO"><AppenderRef ref="Console" /></AsyncRoot>
+  </Loggers>
+</Configuration>

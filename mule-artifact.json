@@ -1,0 +1,18 @@
+{
+  "minMuleVersion": "4.6.0",
+  "secureProperties": [
+    "db.password",
+    "smtp.password"
+  ],
+  "configs": [
+    "global-config.xml",
+    "error-handler.xml",
+    "file-validation.xml",
+    "parse-flows.xml",
+    "validation-flow.xml",
+    "reject-flow.xml",
+    "persistence-flow.xml",
+    "notification-flow.xml",
+    "main-flow.xml"
+  ]
+}

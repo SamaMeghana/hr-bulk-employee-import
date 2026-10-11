@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+      http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+      http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <error-handler name="global-error-handler">
+        <on-error-continue type="DB:QUERY_EXECUTION" when="#[(error.description default '') contains 'uk_import_file']">
+            <set-variable variableName="finalStatus" value="DUPLICATE_FILE" />
+            <set-variable variableName="targetDir" value="${app.file.archiveDir}" />
+            <flow-ref name="hr-import-finalize-subflow" />
+        </on-error-continue>
+
+        <on-error-continue type="HR:INVALID_FILE, HR:COUNT_MISMATCH">
+            <logger level="ERROR" category="hr.import.alert"
+                    message="#['ALERT runId=' ++ (vars.runId default 'NO-RUN') ++ ' file=' ++ (vars.fileName default 'unknown') ++ ' event=FILE_REJECTED type=' ++ error.errorType.identifier ++ ' reason=' ++ error.description]" />
+            <set-variable variableName="finalStatus" value="FAILED" />
+            <set-variable variableName="failureReason" value="#[error.description]" />
+            <set-variable variableName="targetDir" value="${app.file.errorDir}" />
+            <flow-ref name="hr-import-safe-finalize-subflow" />
+        </on-error-continue>
+
+        <on-error-continue type="ANY">
+            <ee:transform>
+                <ee:message><ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+(error.description default "") replace /'[^']*'/ with "'***'" ]]></ee:set-payload></ee:message>
+                <ee:variables><ee:set-variable variableName="safeDescription">#[payload]</ee:set-variable></ee:variables>
+            </ee:transform>
+            <logger level="ERROR" category="hr.import.alert"
+                    message="#['ALERT runId=' ++ (vars.runId default 'NO-RUN') ++ ' file=' ++ (vars.fileName default 'unknown') ++ ' event=UNEXPECTED_ERROR type=' ++ error.errorType.namespace ++ ':' ++ error.errorType.identifier ++ ' detail=' ++ vars.safeDescription]" />
+            <set-variable variableName="finalStatus" value="FAILED" />
+            <set-variable variableName="failureReason" value="#['Unexpected processing error (' ++ error.errorType.identifier ++ '). See the log for run ' ++ (vars.runId default 'NO-RUN')]" />
+            <set-variable variableName="targetDir" value="${app.file.errorDir}" />
+            <flow-ref name="hr-import-safe-finalize-subflow" />
+        </on-error-continue>
+    </error-handler>
+
+    <sub-flow name="hr-import-safe-finalize-subflow">
+        <try>
+            <flow-ref name="hr-import-finalize-subflow" />
+            <error-handler>
+                <on-error-continue type="ANY">
+                    <logger level="ERROR" category="hr.import.alert"
+                            message="#['ALERT runId=' ++ (vars.runId default 'NO-RUN') ++ ' event=AUDIT_FALLBACK status=' ++ vars.finalStatus ++ ' note=run row or email could not be written']" />
+                    <try>
+                        <file:move config-ref="File_Config" sourcePath="#[vars.sourcePath]" targetPath="${app.file.errorDir}" overwrite="true" createParentDirectories="true" />
+                        <error-handler><on-error-continue type="ANY"><logger level="ERROR" message="event=MOVE_FAILED" /></on-error-continue></error-handler>
+                    </try>
+                </on-error-continue>
+            </error-handler>
+        </try>
+    </sub-flow>
+</mule>

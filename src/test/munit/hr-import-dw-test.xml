@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+      http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+      http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+      http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+
+    <munit:config name="hr-import-dw-test" />
+
+    <flow name="munit-csv-canonical-flow">
+        <ee:transform>
+            <ee:message>
+                <ee:set-payload resource="dwl/csv-canonical-transform.dwl" />
+            </ee:message>
+        </ee:transform>
+    </flow>
+
+    <flow name="munit-xml-canonical-flow">
+        <ee:transform>
+            <ee:message>
+                <ee:set-payload resource="dwl/xml-canonical-transform.dwl" />
+            </ee:message>
+        </ee:transform>
+    </flow>
+
+    <munit:test name="csv-canonical-parses-five-records" description="CSV transform yields canonical records">
+        <munit:execution>
+            <set-payload value="#[readUrl('classpath://samples/EMP_IMPORT_valid.csv','text/plain')]" />
+            <flow-ref name="munit-csv-canonical-flow" />
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[sizeOf(payload)]" is="#[MunitTools::equalTo(5)]" />
+            <munit-tools:assert-that expression="#[payload[0].employeeId]" is="#[MunitTools::equalTo('EMP10041')]" />
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="xml-canonical-parses-five-records" description="XML transform yields canonical records">
+        <munit:execution>
+            <set-payload value="#[readUrl('classpath://samples/EMP_IMPORT_valid.xml','application/xml')]" />
+            <flow-ref name="munit-xml-canonical-flow" />
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[sizeOf(payload)]" is="#[MunitTools::equalTo(5)]" />
+            <munit-tools:assert-that expression="#[payload[4].departmentCode]" is="#[MunitTools::equalTo('DEPT-XXX')]" />
+        </munit:validation>
+    </munit:test>
+</mule>

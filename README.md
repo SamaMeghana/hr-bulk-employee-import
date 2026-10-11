@@ -1362,3 +1362,48 @@ MUnit cannot find a processor to mock	doc:name differs from the mock	Make the na
 Emails not appearing	MailHog not running or wrong port	smtp.port=1025, check localhost:8025
 All rows rejected for managers	Seed managers EMP10003, EMP10005, EMP10008 are missing	Add them to the seed data (Step 3)
 
+
+---
+## Local developer setup and verification (implemented in this repository)
+
+### Project structure delivered
+This repository now includes the Mule 4 project skeleton and implementation assets described in this guide:
+- `pom.xml`, `mule-artifact.json`, `.gitignore`
+- `src/main/mule/*.xml` flows (intake/orchestration, parsing, validation, rejects, persistence, notifications, error handling)
+- `src/main/resources/config` property files (`app-config-dev.yaml`, secure template)
+- `src/main/resources/dwl` DataWeave modules for canonical parsing, validation, reject output, email body
+- `src/main/resources/sql/ddl.sql`
+- `src/main/resources/api/hr-import-api.raml`
+- `src/test/munit` and `src/test/resources/samples`
+
+### Safe local secrets handling
+- Copy `src/main/resources/config/app-config-secure-dev.template.yaml` to `src/main/resources/config/app-config-secure-dev.yaml` locally.
+- Encrypt values with Mule Secure Properties Tool.
+- Run with `-Dmule.key=<your-key>` and do not commit real keys/passwords.
+
+### Commands run by the coding agent in this environment
+```bash
+# static XML validation (all Mule/MUnit XML files)
+python - <<'PY'
+from pathlib import Path
+import xml.etree.ElementTree as ET
+for p in sorted(Path('src').glob('**/*.xml')):
+    ET.parse(p)
+print('XML_OK')
+PY
+
+# Mule Maven build
+mvn -B -DskipTests package
+```
+
+### Verification result and environment limitation
+- XML validation passed (`XML_OK`).
+- Maven build could not complete in this sandbox because the Mule Maven plugin and Mule packaging extension could not be resolved from `https://repository.mulesoft.org/...` (DNS/network resolution failure in this environment), causing `Unknown packaging: mule-application`.
+- On a developer machine/CI runner with access to MuleSoft artifact repositories, run:
+  ```bash
+  mvn -B clean test
+  ```
+  and then run locally with Mule runtime arguments:
+  ```bash
+  -Dmule.env=dev -Dmule.key=<your-key>
+  ```

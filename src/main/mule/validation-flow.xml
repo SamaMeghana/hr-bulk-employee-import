@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+      http://www.mulesoft.org/schema/mule/documentation http://www.mulesoft.org/schema/mule/documentation/current/mule-documentation.xsd
+      
+      http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+      http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <sub-flow name="hr-import-load-refdata-subflow">
+        <set-payload value="REFDATA" />
+        <ee:cache cachingStrategy-ref="RefData_Cache">
+            <db:select config-ref="Database_Config" doc:name="Select departments"><db:sql>SELECT department_code, department_key FROM department_master WHERE is_active = TRUE</db:sql></db:select>
+            <set-variable variableName="deptRows" value="#[payload]" />
+            <db:select config-ref="Database_Config" doc:name="Select locations"><db:sql>SELECT location_code, location_key FROM location_master WHERE is_active = TRUE</db:sql></db:select>
+            <set-variable variableName="locRows" value="#[payload]" />
+            <db:select config-ref="Database_Config" doc:name="Select grades"><db:sql>SELECT designation, grade FROM designation_grade_master</db:sql></db:select>
+            <ee:transform>
+                <ee:message><ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+  departments: { (vars.deptRows map ((r) -> { (r.department_code): r.department_key })) },
+  locations:   { (vars.locRows  map ((r) -> { (r.location_code):   r.location_key  })) },
+  grades:      { (payload       map ((r) -> { (r.designation):     r.grade         })) }
+}]]></ee:set-payload></ee:message>
+            </ee:transform>
+        </ee:cache>
+        <set-variable variableName="refsStatic" value="#[payload]" />
+        <db:select config-ref="Database_Config" doc:name="Select employees"><db:sql>SELECT employee_id, official_email FROM employees</db:sql></db:select>
+        <ee:transform>
+            <ee:message><ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+vars.refsStatic ++ {
+  employees: { (payload map ((r) -> { (r.employee_id): true })) },
+  emails:    { (payload map ((r) -> { (lower(r.official_email)): r.employee_id })) }
+}]]></ee:set-payload></ee:message>
+            <ee:variables><ee:set-variable variableName="refs">#[payload]</ee:set-variable></ee:variables>
+        </ee:transform>
+    </sub-flow>
+
+    <sub-flow name="hr-import-validate-records-subflow">
+        <set-variable variableName="cfg" value="#[{ minAge: p('app.validation.minAge') as Number, futureToleranceDays: p('app.validation.futureToleranceDays') as Number, strategy: p('app.validation.duplicateStrategy'), allowedTypes: (p('app.validation.allowedEmploymentTypes') splitBy ',') map trim($) }]" />
+        <set-payload value="#[vars.records]" />
+        <ee:transform doc:name="Validate and tag records"><ee:message><ee:set-payload resource="dwl/record-validation.dwl" /></ee:message></ee:transform>
+        <set-variable variableName="validated" value="#[payload]" />
+        <ee:transform doc:name="Build summary">
+            <ee:message><ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var rej = payload filter ($.action == "REJECT")
+var total = sizeOf(payload)
+---
+{
+  total: total,
+  rejected: sizeOf(rej),
+  inserted: sizeOf(payload filter ($.action == "INSERT")),
+  updated:  sizeOf(payload filter ($.action == "UPDATE")),
+  rejectPercent: if (total == 0) 0 else round((sizeOf(rej) / total) * 10000) / 100,
+  rejectSummary: (rej groupBy $.rejectCode) pluck ((v, k) -> { rejectCode: k as String, count: sizeOf(v) })
+}]]></ee:set-payload></ee:message>
+            <ee:variables><ee:set-variable variableName="summary">#[payload]</ee:set-variable></ee:variables>
+        </ee:transform>
+        <logger level="INFO" category="hr.import" message="#['runId=' ++ vars.runId ++ ' event=VALIDATED total=' ++ vars.summary.total ++ ' rejected=' ++ vars.summary.rejected ++ ' pct=' ++ vars.summary.rejectPercent]" />
+    </sub-flow>
+
+    <sub-flow name="hr-import-threshold-check-subflow">
+        <choice>
+            <when expression="#[vars.summary.rejectPercent > (p('app.validation.thresholdPercent') as Number)]">
+                <logger level="ERROR" category="hr.import.alert" message="#['ALERT runId=' ++ vars.runId ++ ' event=THRESHOLD_EXCEEDED pct=' ++ vars.summary.rejectPercent]" />
+                <set-variable variableName="finalStatus" value="ABORTED" />
+                <set-variable variableName="failureReason" value="#['Rejection rate ' ++ vars.summary.rejectPercent ++ '% exceeds the ' ++ p('app.validation.thresholdPercent') ++ '% limit. The file appears to be the wrong extract; no records were written.']" />
+                <flow-ref name="hr-import-write-rejects-subflow" />
+                <set-variable variableName="targetDir" value="${app.file.errorDir}" />
+                <flow-ref name="hr-import-finalize-subflow" />
+            </when>
+            <otherwise>
+                <flow-ref name="hr-import-persist-flow" />
+            </otherwise>
+        </choice>
+    </sub-flow>
+</mule>

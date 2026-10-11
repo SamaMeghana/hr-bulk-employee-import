@@ -1,0 +1,38 @@
+app:
+  file:
+    inboundDir: "/tmp/hr/inbound"
+    archiveDir: "/tmp/hr/archive"
+    errorDir: "/tmp/hr/error"
+    rejectDir: "/tmp/hr/reject"
+    pollFrequencyMs: "10000"
+  validation:
+    minAge: "18"
+    futureToleranceDays: "30"
+    thresholdPercent: "40.00"
+    duplicateStrategy: "UPDATE"
+    allowedEmploymentTypes: "PERMANENT,CONTRACT,INTERN,CONSULTANT"
+  batch:
+    size: "200"
+    maxFailedRecords: "0"
+  retry:
+    maxAttempts: "3"
+    delayMs: "2000"
+  reject:
+    sampleSize: "10"
+db:
+  host: "localhost"
+  port: "3306"
+  name: "hrdb"
+  user: "hr_app"
+smtp:
+  host: "localhost"
+  port: "1025"
+  user: "hr-integration@company.com"
+  from: "hr-integration@company.com"
+hr:
+  admin:
+    distributionList: "hr-admin@company.com"
+api:
+  id: "0000000"
+http:
+  port: "8081"
