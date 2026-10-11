@@ -1,13 +1,11 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <mule xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
       xmlns:db="http://www.mulesoft.org/schema/mule/db"
       xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
       xmlns:os="http://www.mulesoft.org/schema/mule/os"
       xmlns="http://www.mulesoft.org/schema/mule/core"
-      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:schemaLocation="
-      http://www.mulesoft.org/schema/mule/documentation http://www.mulesoft.org/schema/mule/documentation/current/mule-documentation.xsd
       
       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
       http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
@@ -52,7 +50,7 @@
                                 </on-error-continue>
                             </error-handler>
                         </try>
-                        <db:update config-ref="Database_Config" doc:name="Increment batch counter">
+                        <db:update config-ref="Database_Config">
                             <db:sql>UPDATE employee_import_runs SET batches_completed = batches_completed + 1 WHERE run_id = :runId</db:sql>
                             <db:input-parameters>#[{ runId: vars.runId }]</db:input-parameters>
                         </db:update>
@@ -69,7 +67,7 @@
     </flow>
 
     <sub-flow name="hr-import-upsert-bulk-subflow">
-        <db:bulk-insert config-ref="Database_Config" doc:name="Bulk upsert employees">
+        <db:bulk-insert config-ref="Database_Config">
             <db:sql><![CDATA[INSERT INTO employees (employee_id, first_name, last_name, date_of_birth, date_of_joining,
                 official_email, mobile, department_key, designation, grade, location_key, employment_type,
                 manager_key, employee_status, source_run_id)
@@ -85,7 +83,7 @@
     </sub-flow>
 
     <sub-flow name="hr-import-upsert-one-subflow">
-        <db:insert config-ref="Database_Config" doc:name="Upsert employee">
+        <db:insert config-ref="Database_Config">
             <db:sql><![CDATA[INSERT INTO employees (employee_id, first_name, last_name, date_of_birth, date_of_joining,
                 official_email, mobile, department_key, designation, grade, location_key, employment_type,
                 manager_key, employee_status, source_run_id)
@@ -102,7 +100,7 @@
     </sub-flow>
 
     <sub-flow name="hr-import-record-db-error-subflow">
-        <db:insert config-ref="Database_Config" doc:name="Record db error reject">
+        <db:insert config-ref="Database_Config">
             <db:sql>INSERT INTO employee_import_rejects (run_id, record_index, employee_id, reject_code, reject_reason)
                 VALUES (:runId, :recordIndex, :employeeId, 'DB_ERROR', 'Record could not be written after the batch was rolled back')</db:sql>
             <db:input-parameters>#[{ runId: vars.runId, recordIndex: payload.recordIndex, employeeId: payload.employeeId }]</db:input-parameters>
@@ -130,7 +128,7 @@
     <sub-flow name="hr-import-pass2-managers-subflow">
         <set-payload value="#[(vars.ctx.managerLinks default []) filter (!(vars.dbErrorIds contains $.employeeId)) map ($ ++ { runId: vars.runId })]" />
         <foreach batchSize="200">
-            <db:update config-ref="Database_Config" doc:name="Update manager link">
+            <db:update config-ref="Database_Config">
                 <db:sql>UPDATE employees SET manager_key = :managerKey WHERE employee_id = :employeeId AND source_run_id = :runId</db:sql>
                 <db:input-parameters>#[payload]</db:input-parameters>
             </db:update>
@@ -158,3 +156,4 @@ var total    = vars.ctx.summary.total
         <set-variable variableName="targetDir" value="#[if (vars.finalStatus == 'FAILED') p('app.file.errorDir') else p('app.file.archiveDir')]" />
     </sub-flow>
 </mule>
+

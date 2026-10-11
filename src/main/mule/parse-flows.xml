@@ -1,15 +1,13 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
       xmlns="http://www.mulesoft.org/schema/mule/core"
-      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:schemaLocation="
-      http://www.mulesoft.org/schema/mule/documentation http://www.mulesoft.org/schema/mule/documentation/current/mule-documentation.xsd
       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
       http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
     <sub-flow name="hr-import-parse-csv-subflow">
-        <ee:transform doc:name="CSV file-level check">
+        <ee:transform>
             <ee:message><ee:set-payload><![CDATA[%dw 2.0
 output application/java
 var expected = ["employeeId","firstName","lastName","dateOfBirth","dateOfJoining","officialEmail","mobile","departmentCode","designation","locationCode","employmentType","managerId"]
@@ -20,7 +18,7 @@ var header = (((data[0] default "") replace "\uFEFF" with "") splitBy ",") map t
 var declaration = (lines filter ($ startsWith "#recordCount="))[0] default null
 ---
 {
-  error: if (text contains "�") "File encoding is not valid UTF-8"
+  error: if (text contains " ") "File encoding is not valid UTF-8"
          else if (isEmpty(data)) "File has no header row"
          else if (header != expected) "CSV header is missing, reordered or has unexpected columns: expected " ++ (expected joinBy ",")
          else null,
@@ -32,7 +30,7 @@ var declaration = (lines filter ($ startsWith "#recordCount="))[0] default null
             <when expression="#[vars.fileCheck.error != null]"><raise-error type="HR:INVALID_FILE" description="#[vars.fileCheck.error]" /></when>
         </choice>
         <set-payload value="#[vars.rawFile]" />
-        <ee:transform doc:name="CSV to canonical"><ee:message><ee:set-payload resource="dwl/csv-canonical-transform.dwl" /></ee:message></ee:transform>
+        <ee:transform ><ee:message><ee:set-payload resource="dwl/csv-canonical-transform.dwl" /></ee:message></ee:transform>
         <set-variable variableName="records" value="#[payload]" />
         <set-variable variableName="declaredCount" value="#[vars.fileCheck.declared]" />
         <set-variable variableName="sourceSystem" value="#['n/a']" />
@@ -41,7 +39,7 @@ var declaration = (lines filter ($ startsWith "#recordCount="))[0] default null
 
     <sub-flow name="hr-import-parse-xml-subflow">
         <try>
-            <ee:transform doc:name="XML file-level check">
+            <ee:transform>
                 <ee:message><ee:set-payload><![CDATA[%dw 2.0
 output application/java
 var expected = ["employeeId","firstName","lastName","dateOfBirth","dateOfJoining","officialEmail","mobile","departmentCode","designation","locationCode","employmentType","managerId"]
@@ -63,7 +61,7 @@ var missing = emps map ((e, i) -> { row: i + 1, gone: expected -- (keysOf(e) map
         </try>
         <choice><when expression="#[vars.fileCheck.error != null]"><raise-error type="HR:INVALID_FILE" description="#[vars.fileCheck.error]" /></when></choice>
         <set-payload value="#[vars.rawFile]" />
-        <ee:transform doc:name="XML to canonical"><ee:message><ee:set-payload resource="dwl/xml-canonical-transform.dwl" /></ee:message></ee:transform>
+        <ee:transform><ee:message><ee:set-payload resource="dwl/xml-canonical-transform.dwl" /></ee:message></ee:transform>
         <set-variable variableName="records" value="#[payload]" />
         <set-variable variableName="declaredCount" value="#[vars.fileCheck.declared]" />
         <set-variable variableName="sourceSystem" value="#[vars.fileCheck.sourceSystem]" />
@@ -74,3 +72,4 @@ var missing = emps map ((e, i) -> { row: i + 1, gone: expected -- (keysOf(e) map
         <choice><when expression="#[vars.declaredCount != null and vars.declaredCount != sizeOf(vars.records)]"><raise-error type="HR:COUNT_MISMATCH" description="#['Declared ' ++ vars.declaredCount ++ ' records but parsed ' ++ sizeOf(vars.records)]" /></when></choice>
     </sub-flow>
 </mule>
+

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+            
+      http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+      http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+      http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <sub-flow name="hr-import-write-rejects-subflow">
+        <set-variable variableName="rejects" value="#[vars.validated filter ($.action == 'REJECT')]" />
+        <set-variable variableName="rejectSample" value="#[(vars.rejects default [])[0 to (p('app.reject.sampleSize') as Number) - 1] map { recordIndex: $.recordIndex, employeeId: $.employeeId, rejectReason: $.rejectReason }]" />
+        <choice>
+            <when expression="#[sizeOf(vars.rejects) > 0]">
+                <ee:transform >
+                    <ee:message><ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+vars.rejects map ((r) -> {
+  runId: vars.runId, recordIndex: r.recordIndex, employeeId: r.employeeId,
+  rejectCode: r.rejectCode, rejectReason: (r.rejectReason default "")[0 to 254]
+})]]></ee:set-payload></ee:message>
+                </ee:transform>
+                <db:bulk-insert config-ref="Database_Config" >
+                    <db:sql>INSERT INTO employee_import_rejects (run_id, record_index, employee_id, reject_code, reject_reason)
+                        VALUES (:runId, :recordIndex, :employeeId, :rejectCode, :rejectReason)</db:sql>
+                </db:bulk-insert>
+                <choice>
+                    <when expression="#[vars.fileFormat == 'CSV']">
+                        <ee:transform ><ee:message><ee:set-payload resource="dwl/reject-csv.dwl" /></ee:message></ee:transform>
+                    </when>
+                    <otherwise>
+                        <ee:transform ><ee:message><ee:set-payload resource="dwl/reject-xml.dwl" /></ee:message></ee:transform>
+                    </otherwise>
+                </choice>
+                <set-variable variableName="rejectFilePath" value="#[p('app.file.rejectDir') ++ '/REJECT_' ++ vars.fileName]" />
+                <file:write config-ref="File_Config" path="#[vars.rejectFilePath]" createParentDirectories="true" mode="OVERWRITE"  />
+            </when>
+        </choice>
+    </sub-flow>
+</mule>

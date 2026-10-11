@@ -17,7 +17,7 @@
     <http.connector.version>1.10.3</http.connector.version>
     <file.connector.version>1.5.5</file.connector.version>
     <db.connector.version>1.14.11</db.connector.version>
-    <email.connector.version>1.8.3</email.connector.version>
+    <email.connector.version>1.8.0</email.connector.version>
     <objectstore.connector.version>1.2.3</objectstore.connector.version>
     <secure.properties.module.version>1.2.7</secure.properties.module.version>
     <validation.module.version>2.0.7</validation.module.version>
@@ -49,6 +49,14 @@
           </execution>
         </executions>
         <configuration>
+		<runtimeProduct>MULE</runtimeProduct>
+  <!-- FIX: Ensure the tag uses camelCase capitalization -->
+  <munitRuntimeVersion>${app.runtime}</munitRuntimeVersion>
+		<argLines>
+            <!-- Add these flags to permit deep JVM reflection access -->
+            <argLine>--add-opens=java.base/sun.misc=ALL-UNNAMED</argLine>
+            <argLine>--add-opens=java.base/java.lang=ALL-UNNAMED</argLine>
+        </argLines>
           <coverage>
             <runCoverage>true</runCoverage>
             <failBuild>false</failBuild>
@@ -94,10 +102,10 @@
       <classifier>mule-plugin</classifier>
     </dependency>
     <dependency>
-      <groupId>org.mule.modules</groupId>
-      <artifactId>mule-secure-configuration-property-module</artifactId>
-      <version>${secure.properties.module.version}</version>
-      <classifier>mule-plugin</classifier>
+       <groupId>com.mulesoft.modules</groupId>
+        <artifactId>mule-secure-configuration-property-module</artifactId>
+       <version>${secure.properties.module.version}</version>
+        <classifier>mule-plugin</classifier>
     </dependency>
     <dependency>
       <groupId>org.mule.modules</groupId>
@@ -131,7 +139,7 @@
     <repository>
       <id>mulesoft-releases</id>
       <name>MuleSoft Releases Repository</name>
-      <url>https://repository.mulesoft.org/nexus/content/repositories/releases/</url>
+      <url>https://repository.mulesoft.org/releases/</url>
     </repository>
   </repositories>
 
@@ -139,7 +147,7 @@
     <pluginRepository>
       <id>mulesoft-releases</id>
       <name>MuleSoft Releases Repository</name>
-      <url>https://repository.mulesoft.org/nexus/content/repositories/releases/</url>
+      <url>https://repository.mulesoft.org/releases/</url>
     </pluginRepository>
   </pluginRepositories>
 </project>

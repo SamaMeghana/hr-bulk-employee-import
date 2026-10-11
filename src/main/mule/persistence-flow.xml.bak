@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+      xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:os="http://www.mulesoft.org/schema/mule/os"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+      http://www.mulesoft.org/schema/mule/documentation http://www.mulesoft.org/schema/mule/documentation/current/mule-documentation.xsd
+      
+      http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+      http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+      http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+      http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <flow name="hr-import-persist-flow">
+        <flow-ref name="hr-import-write-rejects-subflow" />
+        <os:store key="#[vars.runId]" objectStore="Run_Context_Store">
+            <os:value><![CDATA[#[{
+                runId: vars.runId, fileName: vars.fileName, fileFormat: vars.fileFormat, sourceSystem: vars.sourceSystem,
+                sourcePath: vars.sourcePath, startedAt: vars.startedAt, declaredCount: vars.declaredCount,
+                summary: vars.summary, rejectSample: vars.rejectSample, rejectFilePath: vars.rejectFilePath,
+                insertIds: (vars.validated filter ($.action == 'INSERT')).employeeId,
+                updateIds: (vars.validated filter ($.action == 'UPDATE')).employeeId,
+                managerLinks: vars.validated filter ($.action != 'REJECT' and $.managerKey != null)
+                            map { employeeId: $.employeeId, managerKey: $.managerKey }
+            }]]]></os:value>
+        </os:store>
+        <set-payload value="#[(vars.validated filter ($.action != 'REJECT')) map ($ ++ { runId: vars.runId })]" />
+
+        <batch:job jobName="hr-import-batch-job" blockSize="200" maxFailedRecords="-1">
+            <batch:process-records>
+                <batch:step name="hr-import-upsert-step">
+                    <batch:aggregator size="200">
+                        <try>
+                            <flow-ref name="hr-import-upsert-bulk-subflow" />
+                            <error-handler>
+                                <on-error-continue type="ANY">
+                                    <logger level="WARN" category="hr.import" message="#['runId=' ++ vars.runId ++ ' event=BATCH_ROLLED_BACK size=' ++ sizeOf(payload) ++ ' errorType=' ++ error.errorType.identifier]" />
+                                    <foreach>
+                                        <try>
+                                            <flow-ref name="hr-import-upsert-one-subflow" />
+                                            <error-handler>
+                                                <on-error-continue type="ANY">
+                                                    <flow-ref name="hr-import-record-db-error-subflow" />
+                                                </on-error-continue>
+                                            </error-handler>
+                                        </try>
+                                    </foreach>
+                                </on-error-continue>
+                            </error-handler>
+                        </try>
+                        <db:update config-ref="Database_Config" doc:name="Increment batch counter">
+                            <db:sql>UPDATE employee_import_runs SET batches_completed = batches_completed + 1 WHERE run_id = :runId</db:sql>
+                            <db:input-parameters>#[{ runId: vars.runId }]</db:input-parameters>
+                        </db:update>
+                    </batch:aggregator>
+                </batch:step>
+            </batch:process-records>
+            <batch:on-complete>
+                <flow-ref name="hr-import-restore-context-subflow" />
+                <flow-ref name="hr-import-pass2-managers-subflow" />
+                <flow-ref name="hr-import-final-counts-subflow" />
+                <flow-ref name="hr-import-finalize-subflow" />
+            </batch:on-complete>
+        </batch:job>
+    </flow>
+
+    <sub-flow name="hr-import-upsert-bulk-subflow">
+        <db:bulk-insert config-ref="Database_Config" doc:name="Bulk upsert employees">
+            <db:sql><![CDATA[INSERT INTO employees (employee_id, first_name, last_name, date_of_birth, date_of_joining,
+                official_email, mobile, department_key, designation, grade, location_key, employment_type,
+                manager_key, employee_status, source_run_id)
+                VALUES (:employeeId, :firstName, :lastName, :dateOfBirth, :dateOfJoining, :officialEmail, :mobile,
+                :departmentKey, :designation, :grade, :locationKey, :employmentType, NULL, 'ACTIVE', :runId)
+                ON DUPLICATE KEY UPDATE first_name = VALUES(first_name), last_name = VALUES(last_name),
+                date_of_birth = VALUES(date_of_birth), date_of_joining = VALUES(date_of_joining),
+                official_email = VALUES(official_email), mobile = VALUES(mobile),
+                department_key = VALUES(department_key), designation = VALUES(designation), grade = VALUES(grade),
+                location_key = VALUES(location_key), employment_type = VALUES(employment_type),
+                manager_key = NULL, source_run_id = VALUES(source_run_id), updated_at = CURRENT_TIMESTAMP]]></db:sql>
+        </db:bulk-insert>
+    </sub-flow>
+
+    <sub-flow name="hr-import-upsert-one-subflow">
+        <db:insert config-ref="Database_Config" doc:name="Upsert employee">
+            <db:sql><![CDATA[INSERT INTO employees (employee_id, first_name, last_name, date_of_birth, date_of_joining,
+                official_email, mobile, department_key, designation, grade, location_key, employment_type,
+                manager_key, employee_status, source_run_id)
+                VALUES (:employeeId, :firstName, :lastName, :dateOfBirth, :dateOfJoining, :officialEmail, :mobile,
+                :departmentKey, :designation, :grade, :locationKey, :employmentType, NULL, 'ACTIVE', :runId)
+                ON DUPLICATE KEY UPDATE first_name = VALUES(first_name), last_name = VALUES(last_name),
+                date_of_birth = VALUES(date_of_birth), date_of_joining = VALUES(date_of_joining),
+                official_email = VALUES(official_email), mobile = VALUES(mobile),
+                department_key = VALUES(department_key), designation = VALUES(designation), grade = VALUES(grade),
+                location_key = VALUES(location_key), employment_type = VALUES(employment_type),
+                manager_key = NULL, source_run_id = VALUES(source_run_id), updated_at = CURRENT_TIMESTAMP]]></db:sql>
+            <db:input-parameters>#[payload]</db:input-parameters>
+        </db:insert>
+    </sub-flow>
+
+    <sub-flow name="hr-import-record-db-error-subflow">
+        <db:insert config-ref="Database_Config" doc:name="Record db error reject">
+            <db:sql>INSERT INTO employee_import_rejects (run_id, record_index, employee_id, reject_code, reject_reason)
+                VALUES (:runId, :recordIndex, :employeeId, 'DB_ERROR', 'Record could not be written after the batch was rolled back')</db:sql>
+            <db:input-parameters>#[{ runId: vars.runId, recordIndex: payload.recordIndex, employeeId: payload.employeeId }]</db:input-parameters>
+        </db:insert>
+    </sub-flow>
+
+    <sub-flow name="hr-import-restore-context-subflow">
+        <os:retrieve key="#[vars.runId]" objectStore="Run_Context_Store" target="ctx" />
+        <set-variable variableName="fileName" value="#[vars.ctx.fileName]" />
+        <set-variable variableName="fileFormat" value="#[vars.ctx.fileFormat]" />
+        <set-variable variableName="sourceSystem" value="#[vars.ctx.sourceSystem]" />
+        <set-variable variableName="sourcePath" value="#[vars.ctx.sourcePath]" />
+        <set-variable variableName="startedAt" value="#[vars.ctx.startedAt]" />
+        <set-variable variableName="declaredCount" value="#[vars.ctx.declaredCount]" />
+        <set-variable variableName="summary" value="#[vars.ctx.summary]" />
+        <set-variable variableName="rejectSample" value="#[vars.ctx.rejectSample]" />
+        <set-variable variableName="rejectFilePath" value="#[vars.ctx.rejectFilePath]" />
+        <db:select config-ref="Database_Config">
+            <db:sql>SELECT employee_id FROM employee_import_rejects WHERE run_id = :runId AND reject_code = 'DB_ERROR'</db:sql>
+            <db:input-parameters>#[{ runId: vars.runId }]</db:input-parameters>
+        </db:select>
+        <set-variable variableName="dbErrorIds" value="#[(payload default []) map $.employee_id]" />
+    </sub-flow>
+
+    <sub-flow name="hr-import-pass2-managers-subflow">
+        <set-payload value="#[(vars.ctx.managerLinks default []) filter (!(vars.dbErrorIds contains $.employeeId)) map ($ ++ { runId: vars.runId })]" />
+        <foreach batchSize="200">
+            <db:update config-ref="Database_Config" doc:name="Update manager link">
+                <db:sql>UPDATE employees SET manager_key = :managerKey WHERE employee_id = :employeeId AND source_run_id = :runId</db:sql>
+                <db:input-parameters>#[payload]</db:input-parameters>
+            </db:update>
+        </foreach>
+    </sub-flow>
+
+    <sub-flow name="hr-import-final-counts-subflow">
+        <ee:transform>
+            <ee:message><ee:set-payload><![CDATA[%dw 2.0
+output application/java
+var inserted = vars.ctx.insertIds -- vars.dbErrorIds
+var updated  = vars.ctx.updateIds -- vars.dbErrorIds
+var rejected = vars.ctx.summary.rejected + sizeOf(vars.dbErrorIds)
+var total    = vars.ctx.summary.total
+---
+{
+  total: total, rejected: rejected,
+  inserted: sizeOf(inserted), updated: sizeOf(updated),
+  rejectPercent: if (total == 0) 0 else round((rejected / total) * 10000) / 100,
+  rejectSummary: vars.ctx.summary.rejectSummary ++ (if (isEmpty(vars.dbErrorIds)) [] else [{ rejectCode: "DB_ERROR", count: sizeOf(vars.dbErrorIds) }])
+}]]></ee:set-payload></ee:message>
+            <ee:variables><ee:set-variable variableName="summary">#[payload]</ee:set-variable></ee:variables>
+        </ee:transform>
+        <set-variable variableName="finalStatus" value="#[if (vars.summary.rejected == 0) 'SUCCESS' else if (vars.summary.inserted + vars.summary.updated == 0) 'FAILED' else 'PARTIAL']" />
+        <set-variable variableName="targetDir" value="#[if (vars.finalStatus == 'FAILED') p('app.file.errorDir') else p('app.file.archiveDir')]" />
+    </sub-flow>
+</mule>

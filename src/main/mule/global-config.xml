@@ -1,6 +1,5 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<mule xmlns:api-gateway="http://www.mulesoft.org/schema/mule/api-gateway"
-      xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<mule 
       xmlns:db="http://www.mulesoft.org/schema/mule/db"
       xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
       xmlns:email="http://www.mulesoft.org/schema/mule/email"
@@ -17,8 +16,6 @@
       http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
       http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd
       http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd
-      http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
-      http://www.mulesoft.org/schema/mule/api-gateway http://www.mulesoft.org/schema/mule/api-gateway/current/mule-api-gateway.xsd
       http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
       http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
@@ -57,6 +54,4 @@
     <os:object-store name="Run_Context_Store" persistent="true" entryTtl="1" entryTtlUnit="DAYS" />
     <ee:object-store-caching-strategy name="RefData_Cache" objectStore="RefData_OS" keyGenerationExpression="#['refdata']" />
 
-    <apikit:config name="hr-import-config" api="api/hr-import-api.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
-    <api-gateway:autodiscovery apiId="${api.id}" ignoreBasePath="true" flowRef="hr-import-main-flow" />
 </mule>

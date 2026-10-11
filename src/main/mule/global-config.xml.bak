@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule 
+      xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:email="http://www.mulesoft.org/schema/mule/email"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:os="http://www.mulesoft.org/schema/mule/os"
+      xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+      http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+      http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+      http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+      http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd
+      http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd
+      http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+      http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <configuration-properties file="config/app-config-${mule.env}.yaml" />
+    <secure-properties:config name="Secure_Props" file="config/app-config-secure-${mule.env}.yaml" key="${mule.key}">
+        <secure-properties:encrypt algorithm="Blowfish" mode="CBC" />
+    </secure-properties:config>
+
+    <configuration defaultErrorHandler-ref="global-error-handler" />
+
+    <http:listener-config name="HTTP_Listener_config">
+        <http:listener-connection host="0.0.0.0" port="${http.port}" />
+    </http:listener-config>
+
+    <file:config name="File_Config"><file:connection /></file:config>
+    <file:matcher name="Import_Files_Matcher" filenamePattern="*.{csv,xml,CSV,XML}" />
+
+    <db:config name="Database_Config">
+        <db:my-sql-connection host="${db.host}" port="${db.port}" user="${db.user}" password="${secure::db.password}" database="${db.name}">
+            <reconnection>
+                <reconnect frequency="${app.retry.delayMs}" count="${app.retry.maxAttempts}" />
+            </reconnection>
+        </db:my-sql-connection>
+    </db:config>
+
+    <email:smtp-config name="SMTP_Config">
+        <email:smtp-connection host="${smtp.host}" port="${smtp.port}" user="${smtp.user}" password="${secure::smtp.password}">
+            <reconnection>
+                <reconnect frequency="${app.retry.delayMs}" count="${app.retry.maxAttempts}" />
+            </reconnection>
+        </email:smtp-connection>
+    </email:smtp-config>
+
+    <os:object-store name="Processed_Files_Store" persistent="true" entryTtl="30" entryTtlUnit="DAYS" />
+    <os:object-store name="RefData_OS" persistent="false" entryTtl="10" entryTtlUnit="MINUTES" />
+    <os:object-store name="Run_Context_Store" persistent="true" entryTtl="1" entryTtlUnit="DAYS" />
+    <ee:object-store-caching-strategy name="RefData_Cache" objectStore="RefData_OS" keyGenerationExpression="#['refdata']" />
+
+</mule>

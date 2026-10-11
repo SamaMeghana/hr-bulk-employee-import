@@ -1,13 +1,11 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
       xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
       xmlns:email="http://www.mulesoft.org/schema/mule/email"
       xmlns:file="http://www.mulesoft.org/schema/mule/file"
       xmlns="http://www.mulesoft.org/schema/mule/core"
-      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:schemaLocation="
-      http://www.mulesoft.org/schema/mule/documentation http://www.mulesoft.org/schema/mule/documentation/current/mule-documentation.xsd
       
       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
       http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
@@ -16,7 +14,7 @@
       http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
 
     <sub-flow name="hr-import-finalize-subflow">
-        <ee:transform doc:name="Build final summary">
+        <ee:transform>
             <ee:message><ee:set-payload><![CDATA[%dw 2.0
 output application/java
 ---
@@ -33,7 +31,7 @@ output application/java
         </ee:transform>
         <choice>
             <when expression="#[vars.finalStatus != 'DUPLICATE_FILE']">
-                <db:update config-ref="Database_Config" doc:name="Update run row">
+                <db:update config-ref="Database_Config">
                     <db:sql>UPDATE employee_import_runs SET run_status = :status, declared_count = :declared, parsed_count = :parsed,
                         inserted_count = :ins, updated_count = :upd, rejected_count = :rej, reject_percent = :pct,
                         reject_file_path = :rfp, failure_reason = :reason, completed_at = NOW() WHERE run_id = :runId</db:sql>
@@ -44,19 +42,19 @@ output application/java
             </when>
         </choice>
         <flow-ref name="hr-import-notify-subflow" />
-        <file:move config-ref="File_Config" sourcePath="#[vars.sourcePath]" targetPath="#[vars.targetDir]" overwrite="true" createParentDirectories="true" doc:name="Move file" />
-        <logger level="#[if (vars.final.status == 'SUCCESS' or vars.final.status == 'PARTIAL') 'INFO' else 'ERROR']" category="hr.import"
+        <file:move config-ref="File_Config" sourcePath="#[vars.sourcePath]" targetPath="#[vars.targetDir]" overwrite="true" createParentDirectories="true" />
+        <logger level="INFO" category="hr.import"
                 message="#['runId=' ++ vars.runId ++ ' file=' ++ vars.fileName ++ ' event=RUN_FINISHED status=' ++ vars.final.status ++ ' inserted=' ++ vars.final.inserted ++ ' updated=' ++ vars.final.updated ++ ' rejected=' ++ vars.final.rejected]" />
     </sub-flow>
 
     <sub-flow name="hr-import-notify-subflow">
-        <ee:transform doc:name="Build email">
+        <ee:transform>
             <ee:message><ee:set-payload resource="dwl/email-body.dwl" /></ee:message>
             <ee:variables><ee:set-variable variableName="mail">#[payload]</ee:set-variable></ee:variables>
         </ee:transform>
         <try>
             <until-successful maxRetries="${app.retry.maxAttempts}" millisBetweenRetries="${app.retry.delayMs}">
-                <email:send config-ref="SMTP_Config" fromAddress="${smtp.from}" subject="#[vars.mail.subject]" doc:name="Send email">
+                <email:send config-ref="SMTP_Config" fromAddress="${smtp.from}" subject="#[vars.mail.subject]">
                     <email:to-addresses><email:to-address value="${hr.admin.distributionList}" /></email:to-addresses>
                     <email:body contentType="text/plain"><email:content>#[vars.mail.body]</email:content></email:body>
                 </email:send>
@@ -71,7 +69,7 @@ output application/java
         </try>
         <choice>
             <when expression="#[vars.finalStatus != 'DUPLICATE_FILE']">
-                <db:update config-ref="Database_Config" doc:name="Update notification status">
+                <db:update config-ref="Database_Config">
                     <db:sql>UPDATE employee_import_runs SET notification_status = :ns WHERE run_id = :runId</db:sql>
                     <db:input-parameters>#[{ ns: vars.notificationStatus, runId: vars.runId }]</db:input-parameters>
                 </db:update>
@@ -79,3 +77,4 @@ output application/java
         </choice>
     </sub-flow>
 </mule>
+

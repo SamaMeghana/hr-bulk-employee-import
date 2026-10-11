@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:email="http://www.mulesoft.org/schema/mule/email"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+      http://www.mulesoft.org/schema/mule/documentation http://www.mulesoft.org/schema/mule/documentation/current/mule-documentation.xsd
+      
+      http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+      http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+      http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd
+      http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+
+    <sub-flow name="hr-import-finalize-subflow">
+        <ee:transform doc:name="Build final summary">
+            <ee:message><ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+  status: vars.finalStatus, runId: vars.runId, fileName: vars.fileName, fileFormat: vars.fileFormat default "n/a",
+  sourceSystem: vars.sourceSystem default "n/a", startedAt: vars.startedAt, completedAt: now(),
+  declared: vars.declaredCount, parsed: vars.summary.total default 0,
+  inserted: vars.summary.inserted default 0, updated: vars.summary.updated default 0,
+  rejected: vars.summary.rejected default 0, rejectPercent: vars.summary.rejectPercent default 0,
+  rejectSummary: vars.summary.rejectSummary default [], rejectSample: vars.rejectSample default [],
+  rejectFilePath: vars.rejectFilePath default "none", failureReason: vars.failureReason default null
+}]]></ee:set-payload></ee:message>
+            <ee:variables><ee:set-variable variableName="final">#[payload]</ee:set-variable></ee:variables>
+        </ee:transform>
+        <choice>
+            <when expression="#[vars.finalStatus != 'DUPLICATE_FILE']">
+                <db:update config-ref="Database_Config" doc:name="Update run row">
+                    <db:sql>UPDATE employee_import_runs SET run_status = :status, declared_count = :declared, parsed_count = :parsed,
+                        inserted_count = :ins, updated_count = :upd, rejected_count = :rej, reject_percent = :pct,
+                        reject_file_path = :rfp, failure_reason = :reason, completed_at = NOW() WHERE run_id = :runId</db:sql>
+                    <db:input-parameters>#[{ status: vars.final.status, declared: vars.final.declared, parsed: vars.final.parsed,
+                        ins: vars.final.inserted, upd: vars.final.updated, rej: vars.final.rejected, pct: vars.final.rejectPercent,
+                        rfp: vars.final.rejectFilePath, reason: (vars.final.failureReason default '')[0 to 254], runId: vars.runId }]</db:input-parameters>
+                </db:update>
+            </when>
+        </choice>
+        <flow-ref name="hr-import-notify-subflow" />
+        <file:move config-ref="File_Config" sourcePath="#[vars.sourcePath]" targetPath="#[vars.targetDir]" overwrite="true" createParentDirectories="true" doc:name="Move file" />
+        <logger level="#[if (vars.final.status == 'SUCCESS' or vars.final.status == 'PARTIAL') 'INFO' else 'ERROR']" category="hr.import"
+                message="#['runId=' ++ vars.runId ++ ' file=' ++ vars.fileName ++ ' event=RUN_FINISHED status=' ++ vars.final.status ++ ' inserted=' ++ vars.final.inserted ++ ' updated=' ++ vars.final.updated ++ ' rejected=' ++ vars.final.rejected]" />
+    </sub-flow>
+
+    <sub-flow name="hr-import-notify-subflow">
+        <ee:transform doc:name="Build email">
+            <ee:message><ee:set-payload resource="dwl/email-body.dwl" /></ee:message>
+            <ee:variables><ee:set-variable variableName="mail">#[payload]</ee:set-variable></ee:variables>
+        </ee:transform>
+        <try>
+            <until-successful maxRetries="${app.retry.maxAttempts}" millisBetweenRetries="${app.retry.delayMs}">
+                <email:send config-ref="SMTP_Config" fromAddress="${smtp.from}" subject="#[vars.mail.subject]" doc:name="Send email">
+                    <email:to-addresses><email:to-address value="${hr.admin.distributionList}" /></email:to-addresses>
+                    <email:body contentType="text/plain"><email:content>#[vars.mail.body]</email:content></email:body>
+                </email:send>
+            </until-successful>
+            <set-variable variableName="notificationStatus" value="SENT" />
+            <error-handler>
+                <on-error-continue type="ANY">
+                    <logger level="ERROR" category="hr.import.alert" message="#['ALERT runId=' ++ vars.runId ++ ' event=EMAIL_FAILED errorType=' ++ error.errorType.identifier]" />
+                    <set-variable variableName="notificationStatus" value="FAILED" />
+                </on-error-continue>
+            </error-handler>
+        </try>
+        <choice>
+            <when expression="#[vars.finalStatus != 'DUPLICATE_FILE']">
+                <db:update config-ref="Database_Config" doc:name="Update notification status">
+                    <db:sql>UPDATE employee_import_runs SET notification_status = :ns WHERE run_id = :runId</db:sql>
+                    <db:input-parameters>#[{ ns: vars.notificationStatus, runId: vars.runId }]</db:input-parameters>
+                </db:update>
+            </when>
+        </choice>
+    </sub-flow>
+</mule>

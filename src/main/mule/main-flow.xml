@@ -1,13 +1,11 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
       xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
       xmlns:file="http://www.mulesoft.org/schema/mule/file"
       xmlns:http="http://www.mulesoft.org/schema/mule/http"
       xmlns="http://www.mulesoft.org/schema/mule/core"
-      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:schemaLocation="
-      http://www.mulesoft.org/schema/mule/documentation http://www.mulesoft.org/schema/mule/documentation/current/mule-documentation.xsd
       
       http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
       http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
@@ -74,7 +72,7 @@
     </sub-flow>
 
     <sub-flow name="hr-import-duplicate-check-subflow">
-        <db:select config-ref="Database_Config" doc:name="Select run by checksum">
+        <db:select config-ref="Database_Config">
             <db:sql>SELECT run_status FROM employee_import_runs WHERE file_name = :f AND file_checksum = :c</db:sql>
             <db:input-parameters>#[{ f: vars.fileName, c: vars.checksum }]</db:input-parameters>
         </db:select>
@@ -82,7 +80,7 @@
                       value="#[sizeOf(payload filter (['SUCCESS','PARTIAL','EMPTY','ABORTED','FAILED'] contains upper($.run_status))) > 0]" />
         <choice>
             <when expression="#[!vars.isDuplicate]">
-                <db:insert config-ref="Database_Config" doc:name="Insert run row">
+                <db:insert config-ref="Database_Config">
                     <db:sql>INSERT INTO employee_import_runs (run_id, file_name, file_format, file_checksum, run_status, started_at, correlation_id)
                         VALUES (:runId, :f, :fmt, :c, 'RUNNING', NOW(), :corr)</db:sql>
                     <db:input-parameters>#[{ runId: vars.runId, f: vars.fileName, fmt: vars.fileFormat, c: vars.checksum, corr: correlationId }]</db:input-parameters>
@@ -98,7 +96,7 @@
                 <set-payload value='#[{status: "UP"}]' />
             </when>
             <when expression="#[attributes.requestPath == '/api/v1/runs' and attributes.method == 'GET']">
-                <db:select config-ref="Database_Config" doc:name="List runs">
+                <db:select config-ref="Database_Config">
                     <db:sql>SELECT run_id as runId,file_name as fileName,file_format as fileFormat,run_status as runStatus,
                         declared_count as declaredCount,parsed_count as parsedCount,inserted_count as insertedCount,
                         updated_count as updatedCount,rejected_count as rejectedCount,reject_percent as rejectPercent,
@@ -111,7 +109,7 @@
             </when>
             <when expression="#[(attributes.requestPath startsWith '/api/v1/runs/') and (attributes.requestPath endsWith '/rejects') and attributes.method == 'GET']">
                 <set-variable variableName="runIdParam" value="#[(attributes.requestPath splitBy '/')[4]]" />
-                <db:select config-ref="Database_Config" doc:name="Get run rejects">
+                <db:select config-ref="Database_Config">
                     <db:sql>SELECT record_index as recordIndex, employee_id as employeeId, reject_code as rejectCode, reject_reason as rejectReason
                         FROM employee_import_rejects WHERE run_id = :runId ORDER BY record_index</db:sql>
                     <db:input-parameters>#[{runId: vars.runIdParam}]</db:input-parameters>
@@ -119,7 +117,7 @@
             </when>
             <when expression="#[(attributes.requestPath startsWith '/api/v1/runs/') and attributes.method == 'GET']">
                 <set-variable variableName="runIdParam" value="#[(attributes.requestPath splitBy '/')[4]]" />
-                <db:select config-ref="Database_Config" doc:name="Get run by id">
+                <db:select config-ref="Database_Config">
                     <db:sql>SELECT run_id as runId,file_name as fileName,file_format as fileFormat,run_status as runStatus,
                         declared_count as declaredCount,parsed_count as parsedCount,inserted_count as insertedCount,
                         updated_count as updatedCount,rejected_count as rejectedCount,reject_percent as rejectPercent,
@@ -153,3 +151,4 @@ output application/java
         </choice>
     </flow>
 </mule>
+
