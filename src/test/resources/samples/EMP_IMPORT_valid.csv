@@ -1,0 +1,6 @@
+employeeId,firstName,lastName,dateOfBirth,dateOfJoining,officialEmail,mobile,departmentCode,designation,locationCode,employmentType,managerId
+EMP10041,Karthik,Subramanian,1994-03-18,2026-09-15,karthik.s@company.com,+91-9884012345,DEPT-ENG,Senior Engineer,LOC-CHN-01,PERMANENT,EMP10002
+EMP10042,Priya,Nair,1996-11-02,2026-09-15,priya.nair@company.com,+91-9884012346,DEPT-ENG,Engineer,LOC-CHN-01,PERMANENT,EMP10041
+EMP10043,Vignesh,Murugan,1990-07-25,2026-09-16,vignesh.m@company.com,+91-9884012347,DEPT-FIN,Finance Analyst,LOC-BLR-02,PERMANENT,EMP10008
+EMP10044,Aarthi,Balaji,1999-01-30,2026-09-16,aarthi.b@company.com,+91-9884012348,DEPT-HR,HR Executive,LOC-CHN-01,CONTRACT,EMP10005
+EMP10045,Rahul,Verma,1988-05-14,2026-09-20,rahul.verma@company.com,+91-9884012349,DEPT-XXX,Manager,LOC-CHN-01,PERMANENT,EMP10003

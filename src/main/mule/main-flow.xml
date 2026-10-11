@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+      http://www.mulesoft.org/schema/mule/documentation http://www.mulesoft.org/schema/mule/documentation/current/mule-documentation.xsd
+      
+      http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+      http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+      http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+      http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+      http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <flow name="hr-import-main-flow">
+        <file:listener config-ref="File_Config" directory="${app.file.inboundDir}" autoDelete="false"
+                       matcher="Import_Files_Matcher" timeBetweenSizeCheck="2" timeBetweenSizeCheckUnit="SECONDS">
+            <scheduling-strategy><fixed-frequency frequency="${app.file.pollFrequencyMs}" /></scheduling-strategy>
+        </file:listener>
+        <flow-ref name="hr-import-process-flow" />
+    </flow>
+
+    <flow name="hr-import-process-flow">
+        <flow-ref name="hr-import-init-subflow" />
+        <flow-ref name="hr-import-duplicate-check-subflow" />
+        <choice>
+            <when expression="#[vars.isDuplicate]">
+                <set-variable variableName="finalStatus" value="DUPLICATE_FILE" />
+                <set-variable variableName="targetDir" value="${app.file.archiveDir}" />
+                <flow-ref name="hr-import-finalize-subflow" />
+            </when>
+            <when expression="#[vars.fileSize == 0]">
+                <set-variable variableName="finalStatus" value="EMPTY" />
+                <set-variable variableName="targetDir" value="${app.file.archiveDir}" />
+                <flow-ref name="hr-import-finalize-subflow" />
+            </when>
+            <otherwise>
+                <choice>
+                    <when expression="#[vars.fileFormat == 'CSV']"><flow-ref name="hr-import-parse-csv-subflow" /></when>
+                    <when expression="#[vars.fileFormat == 'XML']"><flow-ref name="hr-import-parse-xml-subflow" /></when>
+                    <otherwise><raise-error type="HR:INVALID_FILE" description="Unsupported file type" /></otherwise>
+                </choice>
+                <choice>
+                    <when expression="#[sizeOf(vars.records) == 0]">
+                        <set-variable variableName="finalStatus" value="EMPTY" />
+                        <set-variable variableName="targetDir" value="${app.file.archiveDir}" />
+                        <flow-ref name="hr-import-finalize-subflow" />
+                    </when>
+                    <otherwise>
+                        <flow-ref name="hr-import-load-refdata-subflow" />
+                        <flow-ref name="hr-import-validate-records-subflow" />
+                        <flow-ref name="hr-import-threshold-check-subflow" />
+                    </otherwise>
+                </choice>
+            </otherwise>
+        </choice>
+    </flow>
+
+    <sub-flow name="hr-import-init-subflow">
+        <set-variable variableName="fileName" value="#[attributes.fileName]" />
+        <set-variable variableName="sourcePath" value="#[attributes.path]" />
+        <set-variable variableName="runId" value="#['RUN-' ++ (now() as String {format: 'yyyyMMddHHmmss'}) ++ '-' ++ uuid()[0 to 7]]" />
+        <set-variable variableName="startedAt" value="#[now()]" />
+        <set-variable variableName="rawFile" value="#[payload]" />
+        <set-variable variableName="fileSize" value="#[sizeOf(payload as Binary)]" />
+        <set-variable variableName="checksum" value="#[dw::core::Binaries::toHex(dw::Crypto::hashWith(payload as Binary, 'SHA-256'))]" />
+        <set-variable variableName="fileFormat"
+                      value="#[if (upper(vars.fileName) endsWith '.CSV') 'CSV' else if (upper(vars.fileName) endsWith '.XML') 'XML' else if (vars.fileSize > 0 and (payload as String)[0 to 0] == '&lt;') 'XML' else 'CSV']" />
+        <set-variable variableName="isDuplicate" value="#[false]" />
+        <logger level="INFO" category="hr.import" message="#['runId=' ++ vars.runId ++ ' file=' ++ vars.fileName ++ ' format=' ++ vars.fileFormat ++ ' event=FILE_PICKED_UP']" />
+    </sub-flow>
+
+    <sub-flow name="hr-import-duplicate-check-subflow">
+        <db:select config-ref="Database_Config" doc:name="Select run by checksum">
+            <db:sql>SELECT run_status FROM employee_import_runs WHERE file_name = :f AND file_checksum = :c</db:sql>
+            <db:input-parameters>#[{ f: vars.fileName, c: vars.checksum }]</db:input-parameters>
+        </db:select>
+        <set-variable variableName="isDuplicate"
+                      value="#[sizeOf(payload filter (['SUCCESS','PARTIAL','EMPTY','ABORTED','FAILED'] contains upper($.run_status))) > 0]" />
+        <choice>
+            <when expression="#[!vars.isDuplicate]">
+                <db:insert config-ref="Database_Config" doc:name="Insert run row">
+                    <db:sql>INSERT INTO employee_import_runs (run_id, file_name, file_format, file_checksum, run_status, started_at, correlation_id)
+                        VALUES (:runId, :f, :fmt, :c, 'RUNNING', NOW(), :corr)</db:sql>
+                    <db:input-parameters>#[{ runId: vars.runId, f: vars.fileName, fmt: vars.fileFormat, c: vars.checksum, corr: correlationId }]</db:input-parameters>
+                </db:insert>
+            </when>
+        </choice>
+    </sub-flow>
+
+    <flow name="hr-import-api-flow">
+        <http:listener config-ref="HTTP_Listener_config" path="/api/v1/*" />
+        <choice>
+            <when expression="#[attributes.requestPath == '/api/v1/health' and attributes.method == 'GET']">
+                <set-payload value='#[{status: "UP"}]' />
+            </when>
+            <when expression="#[attributes.requestPath == '/api/v1/runs' and attributes.method == 'GET']">
+                <db:select config-ref="Database_Config" doc:name="List runs">
+                    <db:sql>SELECT run_id as runId,file_name as fileName,file_format as fileFormat,run_status as runStatus,
+                        declared_count as declaredCount,parsed_count as parsedCount,inserted_count as insertedCount,
+                        updated_count as updatedCount,rejected_count as rejectedCount,reject_percent as rejectPercent,
+                        reject_file_path as rejectFilePath
+                        FROM employee_import_runs
+                        WHERE (:status IS NULL OR run_status = :status)
+                        ORDER BY started_at DESC LIMIT :limitVal</db:sql>
+                    <db:input-parameters>#[{status: attributes.queryParams.status default null, limitVal: (attributes.queryParams.limit default 20) as Number}]</db:input-parameters>
+                </db:select>
+            </when>
+            <when expression="#[(attributes.requestPath startsWith '/api/v1/runs/') and (attributes.requestPath endsWith '/rejects') and attributes.method == 'GET']">
+                <set-variable variableName="runIdParam" value="#[(attributes.requestPath splitBy '/')[4]]" />
+                <db:select config-ref="Database_Config" doc:name="Get run rejects">
+                    <db:sql>SELECT record_index as recordIndex, employee_id as employeeId, reject_code as rejectCode, reject_reason as rejectReason
+                        FROM employee_import_rejects WHERE run_id = :runId ORDER BY record_index</db:sql>
+                    <db:input-parameters>#[{runId: vars.runIdParam}]</db:input-parameters>
+                </db:select>
+            </when>
+            <when expression="#[(attributes.requestPath startsWith '/api/v1/runs/') and attributes.method == 'GET']">
+                <set-variable variableName="runIdParam" value="#[(attributes.requestPath splitBy '/')[4]]" />
+                <db:select config-ref="Database_Config" doc:name="Get run by id">
+                    <db:sql>SELECT run_id as runId,file_name as fileName,file_format as fileFormat,run_status as runStatus,
+                        declared_count as declaredCount,parsed_count as parsedCount,inserted_count as insertedCount,
+                        updated_count as updatedCount,rejected_count as rejectedCount,reject_percent as rejectPercent,
+                        reject_file_path as rejectFilePath
+                        FROM employee_import_runs WHERE run_id = :runId</db:sql>
+                    <db:input-parameters>#[{runId: vars.runIdParam}]</db:input-parameters>
+                </db:select>
+                <choice>
+                    <when expression="#[isEmpty(payload)]">
+                        <set-variable variableName="httpStatus" value="404" />
+                        <set-payload value="#[{ code: 'RUN_NOT_FOUND', message: 'Run not found', correlationId: correlationId }]" />
+                    </when>
+                    <otherwise>
+                        <set-payload value="#[payload[0]]" />
+                    </otherwise>
+                </choice>
+            </when>
+            <when expression="#[attributes.requestPath == '/api/v1/imports/reprocess' and attributes.method == 'POST']">
+                <ee:transform>
+                    <ee:message><ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{ runId: 'REPROCESS-' ++ uuid()[0 to 7], fileName: payload.fileName default null }]]></ee:set-payload></ee:message>
+                </ee:transform>
+                <set-variable variableName="httpStatus" value="202" />
+            </when>
+            <otherwise>
+                <set-variable variableName="httpStatus" value="404" />
+                <set-payload value="#[{ code: 'NOT_FOUND', message: 'Endpoint not found', correlationId: correlationId }]" />
+            </otherwise>
+        </choice>
+    </flow>
+</mule>

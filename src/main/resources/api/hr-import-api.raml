@@ -1,0 +1,79 @@
+#%RAML 1.0
+title: HR Bulk Employee Import API
+version: v1
+baseUri: /api/v1
+mediaType: application/json
+types:
+  Run:
+    properties:
+      runId: string
+      fileName: string
+      fileFormat: string
+      runStatus: string
+      declaredCount?: integer
+      parsedCount?: integer
+      insertedCount?: integer
+      updatedCount?: integer
+      rejectedCount?: integer
+      rejectPercent?: number
+      rejectFilePath?: string
+  Error:
+    properties:
+      code: string
+      message: string
+      correlationId: string
+/runs:
+  get:
+    queryParameters:
+      status?: string
+      limit?:
+        type: integer
+        default: 20
+    responses:
+      200:
+        body:
+          application/json:
+            type: Run[]
+  /{runId}:
+    get:
+      responses:
+        200:
+          body:
+            application/json:
+              type: Run
+        404:
+          body:
+            application/json:
+              type: Error
+    /rejects:
+      get:
+        responses:
+          200:
+            body:
+              application/json:
+                example: |
+                  [{ "recordIndex": 5, "employeeId": "EMP10045", "rejectCode": "UNRESOLVED_DEPARTMENT", "rejectReason": "departmentCode DEPT-XXX not found" }]
+/imports/reprocess:
+  post:
+    body:
+      application/json:
+        example: |
+          { "fileName": "EMP_IMPORT_20260911.csv" }
+    responses:
+      202:
+        body:
+          application/json:
+            example: |
+              { "runId": "RUN-1" }
+      400:
+        body:
+          application/json:
+            type: Error
+/health:
+  get:
+    responses:
+      200:
+        body:
+          application/json:
+            example: |
+              { "status": "UP" }

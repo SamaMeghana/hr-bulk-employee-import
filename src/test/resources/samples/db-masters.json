@@ -1,0 +1,18 @@
+{
+  "departments": [
+    { "department_code": "DEPT-ENG", "department_key": 1 },
+    { "department_code": "DEPT-FIN", "department_key": 2 },
+    { "department_code": "DEPT-HR", "department_key": 3 }
+  ],
+  "locations": [
+    { "location_code": "LOC-CHN-01", "location_key": 1 },
+    { "location_code": "LOC-BLR-02", "location_key": 2 }
+  ],
+  "grades": [
+    { "designation": "Senior Engineer", "grade": "G5" },
+    { "designation": "Engineer", "grade": "G4" },
+    { "designation": "Finance Analyst", "grade": "G4" },
+    { "designation": "HR Executive", "grade": "G3" },
+    { "designation": "Manager", "grade": "G6" }
+  ]
+}
